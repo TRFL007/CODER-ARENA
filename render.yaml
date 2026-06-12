@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: coder-arena
+    env: node
+    plan: free
+    buildCommand: npm run build
+    startCommand: npm start
+    envVars:
+      - key: MONGO_URI
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: GROQ_API_KEY
+        sync: false
+      - key: JUDGE0_URL
+        value: https://ce.judge0.com
+      - key: NODE_VERSION
+        value: 18
