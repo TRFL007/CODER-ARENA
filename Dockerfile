@@ -1,5 +1,5 @@
 # Base image with Node.js
-FROM node:18-bullseye-slim
+FROM node:20-bookworm-slim
 
 # Install system dependencies (GCC/G++, Python, Java JDK)
 RUN apt-get update && apt-get install -y --no-install-recommends \
