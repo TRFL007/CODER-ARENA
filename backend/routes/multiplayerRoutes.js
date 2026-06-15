@@ -192,6 +192,10 @@ router.post("/winner", async (req, res) => {
     if (!room.winner) {
       room.winner = winner;
       room.status = "finished";
+      if (room.startedAt) {
+        const timeTaken = Math.max(1, Math.floor((Date.now() - new Date(room.startedAt).getTime()) / 1000));
+        room.battleTime = timeTaken;
+      }
       await room.save();
 
       const io = req.app.get("io");

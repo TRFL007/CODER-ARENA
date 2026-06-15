@@ -149,7 +149,7 @@ const BattleRoom = () => {
   =========================
   */
   useEffect(() => {
-    if (!room?.startedAt) return;
+    if (!room?.startedAt || room.status !== "started") return;
 
     const interval = setInterval(() => {
       const elapsed = Math.floor(
@@ -165,7 +165,7 @@ const BattleRoom = () => {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [room?.startedAt, room?.battleTime]);
+  }, [room?.startedAt, room?.battleTime, room?.status]);
 
   /*
   =========================
@@ -352,6 +352,37 @@ const BattleRoom = () => {
           )}
         </div>
       </div>
+
+      {/* BATTLE FINISHED MODAL */}
+      {room.winner && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4">
+          <div className="bg-[#282828] border border-yellow-500/30 rounded-2xl p-8 max-w-md w-full text-center shadow-2xl relative overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            {/* Decorative blurs */}
+            <div className="absolute -top-10 -left-10 w-32 h-32 bg-yellow-500/10 rounded-full blur-2xl" />
+            <div className="absolute -bottom-10 -right-10 w-32 h-32 bg-blue-500/10 rounded-full blur-2xl" />
+            
+            <div className="text-6xl mb-4">🏆</div>
+            <h2 className="text-3xl font-extrabold tracking-tight mb-2 bg-gradient-to-r from-yellow-400 via-amber-400 to-yellow-500 bg-clip-text text-transparent">
+              Battle Finished!
+            </h2>
+            <div className="my-6 p-4 rounded-xl bg-[#1d1d1d] border border-zinc-800">
+              <p className="text-zinc-400 text-xs uppercase tracking-wider mb-1">Winner</p>
+              <p className="text-2xl font-bold text-green-400">{room.winner}</p>
+              
+              <p className="text-zinc-400 text-xs uppercase tracking-wider mt-4 mb-1">Time Taken</p>
+              <p className="text-xl font-semibold text-white">
+                {room.battleTime ? formatTime(room.battleTime) : "N/A"}
+              </p>
+            </div>
+            <button
+              onClick={() => navigate("/multiplayer")}
+              className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl font-bold shadow-lg transition-all"
+            >
+              Back to Arena
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

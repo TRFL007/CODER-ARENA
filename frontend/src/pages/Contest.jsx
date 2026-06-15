@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { CircularProgressbar } from "react-circular-progressbar";
 import "react-circular-progressbar/dist/styles.css";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { io } from "socket.io-client";
 
 import SharedCodeEditor from "../components/SharedCodeEditor";
@@ -9,6 +9,7 @@ import { API_URL } from "../config/api";
 
 const Contest = () => {
   const { id } = useParams();
+  const navigate = useNavigate();
   const contestId = id;
 
   const socketRef = useRef(null);
@@ -98,7 +99,16 @@ const Contest = () => {
     try {
       const res = await fetch(`${API_URL}/api/leaderboard/${contestId}`);
       const data = await res.json();
-      setLeaderboard(Array.isArray(data) ? data : []);
+      const list = Array.isArray(data) ? data : [];
+      setLeaderboard(list);
+
+      // Auto-initialize score to 0 if logged-in user is not on the leaderboard
+      if (username && username !== "Guest" && !list.some((p) => p.username === username)) {
+        await saveScore(0);
+        const refetchRes = await fetch(`${API_URL}/api/leaderboard/${contestId}`);
+        const refetchData = await refetchRes.json();
+        setLeaderboard(Array.isArray(refetchData) ? refetchData : []);
+      }
     } catch (err) {
       console.error("loadLeaderboard error:", err);
     }
@@ -299,6 +309,33 @@ const Contest = () => {
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+      {/* CONTEST ENDED MODAL */}
+      {contestLoaded && contestStatus() === "Ended" && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4">
+          <div className="bg-[#282828] border border-blue-500/30 rounded-2xl p-8 max-w-md w-full text-center shadow-2xl relative overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="absolute -top-10 -left-10 w-32 h-32 bg-blue-500/10 rounded-full blur-2xl" />
+            <div className="absolute -bottom-10 -right-10 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl" />
+            
+            <div className="text-6xl mb-4">🏆</div>
+            <h2 className="text-3xl font-extrabold tracking-tight mb-2 bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
+              Contest Finished!
+            </h2>
+            <p className="text-zinc-400 text-sm mt-2">
+              The competition time has concluded. Excellent effort!
+            </p>
+            <div className="my-6 p-4 rounded-xl bg-zinc-900/50 border border-zinc-800">
+              <p className="text-zinc-400 text-xs uppercase tracking-wider mb-1">Your Score</p>
+              <p className="text-3xl font-bold text-green-400">{score}</p>
+            </div>
+            <button
+              onClick={() => navigate(`/contest-results/${contestId}`)}
+              className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl font-bold shadow-lg transition-all"
+            >
+              View Leaderboard & Results
+            </button>
           </div>
         </div>
       )}
