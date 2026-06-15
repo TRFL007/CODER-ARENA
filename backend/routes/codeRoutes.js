@@ -16,6 +16,22 @@ const __dirname = path.dirname(__filename);
 
 /*
 =============================================
+DOCKER AUTO-DETECTION
+=============================================
+*/
+let isDockerAvailable = false;
+
+exec("docker ps", (err) => {
+  if (!err) {
+    isDockerAvailable = true;
+    console.log("🐳 Docker detected. Running submissions inside Docker containers.");
+  } else {
+    console.log("🖥️ Docker not detected. Falling back to direct compilation and execution.");
+  }
+});
+
+/*
+=============================================
 LANGUAGE CONFIG
 Maps language -> Docker image, file ext,
 compile command, run command
@@ -120,6 +136,127 @@ const runInDocker = (folder, lang, input = "") => {
 
 /*
 =============================================
+RUN CODE DIRECTLY (Fallback when Docker is not available)
+=============================================
+*/
+const runDirectly = (folder, lang, input = "") => {
+  return new Promise((resolve, reject) => {
+    const config = LANGUAGE_CONFIG[lang];
+    if (!config) {
+      return reject(new Error(`Unsupported language: ${lang}`));
+    }
+
+    fs.writeFileSync(path.join(folder, "input.txt"), input || "");
+    const isWindows = process.platform === "win32";
+    const inputPath = path.join(folder, "input.txt");
+
+    let compileCmd = null;
+    let runCmd = "";
+
+    if (lang === "cpp") {
+      const srcPath = path.join(folder, "main.cpp");
+      const outPath = path.join(folder, isWindows ? "main.exe" : "main");
+      compileCmd = `g++ -std=c++17 "${srcPath}" -o "${outPath}"`;
+      runCmd = isWindows
+        ? `powershell -Command "Get-Content '${inputPath}' | & '${outPath}'"`
+        : `"${outPath}" < "${inputPath}"`;
+    } else if (lang === "c") {
+      const srcPath = path.join(folder, "main.c");
+      const outPath = path.join(folder, isWindows ? "main.exe" : "main");
+      compileCmd = `gcc "${srcPath}" -o "${outPath}"`;
+      runCmd = isWindows
+        ? `powershell -Command "Get-Content '${inputPath}' | & '${outPath}'"`
+        : `"${outPath}" < "${inputPath}"`;
+    } else if (lang === "java") {
+      const srcPath = path.join(folder, "Main.java");
+      compileCmd = `javac "${srcPath}"`;
+      runCmd = isWindows
+        ? `powershell -Command "Get-Content '${inputPath}' | java -cp '${folder}' Main"`
+        : `java -cp "${folder}" Main < "${inputPath}"`;
+    } else if (lang === "python") {
+      const srcPath = path.join(folder, "main.py");
+      const pythonBin = isWindows ? "python" : "python3";
+      runCmd = isWindows
+        ? `powershell -Command "Get-Content '${inputPath}' | ${pythonBin} '${srcPath}'"`
+        : `${pythonBin} "${srcPath}" < "${inputPath}"`;
+    } else if (lang === "javascript") {
+      const srcPath = path.join(folder, "main.js");
+      runCmd = isWindows
+        ? `powershell -Command "Get-Content '${inputPath}' | node '${srcPath}'"`
+        : `node "${srcPath}" < "${inputPath}"`;
+    }
+
+    const command = compileCmd ? `${compileCmd} && ${runCmd}` : runCmd;
+
+    exec(
+      command,
+      { timeout: 10000 },
+      (error, stdout, stderr) => {
+        cleanDir(folder);
+
+        if (error) {
+          if (error.killed || error.signal === "SIGTERM") {
+            return reject(new Error("Time Limit Exceeded"));
+          }
+          return reject(new Error(stderr || error.message));
+        }
+
+        resolve(String(stdout).trim());
+      }
+    );
+  });
+};
+
+/*
+=============================================
+COMPILE CODE DIRECTLY (Fallback syntax check)
+=============================================
+*/
+const compileDirectly = (folder, lang) => {
+  return new Promise((resolve, reject) => {
+    const isWindows = process.platform === "win32";
+    let command = "";
+
+    if (lang === "cpp") {
+      const srcPath = path.join(folder, "main.cpp");
+      const outPath = path.join(folder, isWindows ? "main.exe" : "main");
+      command = `g++ -std=c++17 "${srcPath}" -o "${outPath}"`;
+    } else if (lang === "c") {
+      const srcPath = path.join(folder, "main.c");
+      const outPath = path.join(folder, isWindows ? "main.exe" : "main");
+      command = `gcc "${srcPath}" -o "${outPath}"`;
+    } else if (lang === "java") {
+      const srcPath = path.join(folder, "Main.java");
+      command = `javac "${srcPath}"`;
+    } else if (lang === "python") {
+      const srcPath = path.join(folder, "main.py");
+      const pythonBin = isWindows ? "python" : "python3";
+      command = `${pythonBin} -m py_compile "${srcPath}"`;
+    } else if (lang === "javascript") {
+      const srcPath = path.join(folder, "main.js");
+      command = `node --check "${srcPath}"`;
+    } else {
+      return reject(new Error(`Unsupported language: ${lang}`));
+    }
+
+    exec(
+      command,
+      { timeout: 15000 },
+      (error, stdout, stderr) => {
+        cleanDir(folder);
+
+        if (error) {
+          return reject(new Error(stderr || error.message));
+        }
+
+        resolve("✅ Compilation Successful");
+      }
+    );
+  });
+};
+
+/*
+=============================================
 COMPILE ENDPOINT (syntax check only)
 =============================================
 */
@@ -142,41 +279,56 @@ router.post("/compile", async (req, res) => {
     fs.writeFileSync(path.join(folder, config.ext), code);
     fs.writeFileSync(path.join(folder, "input.txt"), "");
 
-    /*
-    For interpreted languages, just do a syntax check / dry run
-    */
-    const dockerPath = folder.replace(/\\/g, "/");
+    if (isDockerAvailable) {
+      /*
+      For interpreted languages, just do a syntax check / dry run
+      */
+      const dockerPath = folder.replace(/\\/g, "/");
 
-    let command;
-    if (language === "python") {
-      command = `docker run --rm --memory=64m -v "${dockerPath}:/app" ${config.image} bash -c "python3 -m py_compile /app/main.py && echo OK"`;
-    } else if (language === "javascript") {
-      command = `docker run --rm --memory=64m -v "${dockerPath}:/app" ${config.image} bash -c "node --check /app/main.js && echo OK"`;
-    } else if (config.compileCmd) {
-      command = `docker run --rm --memory=64m -v "${dockerPath}:/app" ${config.image} bash -c "${config.compileCmd}"`;
-    } else {
-      command = `docker run --rm --memory=64m -v "${dockerPath}:/app" ${config.image} bash -c "echo OK"`;
-    }
+      let command;
+      if (language === "python") {
+        command = `docker run --rm --memory=64m -v "${dockerPath}:/app" ${config.image} bash -c "python3 -m py_compile /app/main.py && echo OK"`;
+      } else if (language === "javascript") {
+        command = `docker run --rm --memory=64m -v "${dockerPath}:/app" ${config.image} bash -c "node --check /app/main.js && echo OK"`;
+      } else if (config.compileCmd) {
+        command = `docker run --rm --memory=64m -v "${dockerPath}:/app" ${config.image} bash -c "${config.compileCmd}"`;
+      } else {
+        command = `docker run --rm --memory=64m -v "${dockerPath}:/app" ${config.image} bash -c "echo OK"`;
+      }
 
-    exec(
-      command,
-      { timeout: 15000 },
-      (error, stdout, stderr) => {
-        cleanDir(folder);
+      exec(
+        command,
+        { timeout: 15000 },
+        (error, stdout, stderr) => {
+          cleanDir(folder);
 
-        if (error) {
+          if (error) {
+            return res.json({
+              success: false,
+              error: stderr || error.message
+            });
+          }
+
           return res.json({
-            success: false,
-            error: stderr || error.message
+            success: true,
+            message: "✅ Compilation Successful"
           });
         }
-
+      );
+    } else {
+      try {
+        const msg = await compileDirectly(folder, language);
         return res.json({
           success: true,
-          message: "✅ Compilation Successful"
+          message: msg
+        });
+      } catch (err) {
+        return res.json({
+          success: false,
+          error: err.message
         });
       }
-    );
+    }
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
   }
@@ -238,7 +390,11 @@ router.post("/submit", verifyToken, async (req, res) => {
       let status = "Wrong Answer";
 
       try {
-        output = await runInDocker(folder, language, inputRaw);
+        if (isDockerAvailable) {
+          output = await runInDocker(folder, language, inputRaw);
+        } else {
+          output = await runDirectly(folder, language, inputRaw);
+        }
 
         if (output === expected) {
           passed++;
