@@ -18,7 +18,10 @@ COPY frontend/package*.json ./frontend/
 
 # Install dependencies for backend and frontend
 RUN npm run install-backend
-RUN npm run install-frontend
+# Ensure frontend devDependencies (vite, plugins) are installed during build
+# Some build systems set production=true during Docker builds which skips devDeps.
+# Force npm to install devDependencies for the frontend step.
+RUN npm_config_production=false npm install --prefix frontend --no-package-lock
 
 # Copy the rest of the source files
 COPY . .
