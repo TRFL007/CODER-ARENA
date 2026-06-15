@@ -32,6 +32,32 @@ const BattleRoom = () => {
       }
 
       const data = await res.json();
+
+      // Auto-join if room is waiting, has space, user is logged in, and not already in players list
+      if (
+        data &&
+        data.status === "waiting" &&
+        data.players &&
+        data.players.length < 2 &&
+        username &&
+        username !== "Guest" &&
+        !data.players.includes(username)
+      ) {
+        const joinRes = await fetch(`${API_URL}/api/multiplayer/join`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ roomId: id, username })
+        });
+        if (joinRes.ok) {
+          const joinedData = await joinRes.json();
+          setRoom(joinedData);
+          if (joinedData?.selectedProblems?.length > 0) {
+            setSelectedProblem((prev) => prev ?? joinedData.selectedProblems[0]);
+          }
+          return;
+        }
+      }
+
       setRoom(data);
 
       if (data?.selectedProblems?.length > 0) {
@@ -42,7 +68,7 @@ const BattleRoom = () => {
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, username]);
 
   /*
   =========================
