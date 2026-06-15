@@ -115,14 +115,6 @@ router.post("/join", async (req, res) => {
 
     room.players.push(username);
 
-    /*
-    Auto-start when 2 players are in
-    */
-    if (room.players.length === 2 && room.status !== "started") {
-      room.status = "started";
-      room.startedAt = new Date();
-    }
-
     await room.save();
 
     const io = req.app.get("io");
@@ -136,10 +128,6 @@ router.post("/join", async (req, res) => {
     Room-scoped events — only players in that battle room receive these
     */
     io.to(roomId).emit("battleUpdated", room);
-
-    if (room.status === "started") {
-      io.to(roomId).emit("battleStarted", room);
-    }
 
     res.json(room);
   } catch (err) {
@@ -215,6 +203,75 @@ router.post("/winner", async (req, res) => {
     res.json({ success: true, winner: room.winner });
   } catch (err) {
     console.error("WINNER ROUTE ERROR:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/*
+=================================
+START BATTLE
+=================================
+*/
+router.post("/start", async (req, res) => {
+  try {
+    const { roomId, username } = req.body;
+    const room = await MultiplayerRoom.findById(roomId);
+
+    if (!room) {
+      return res.status(404).json({ error: "Room not found" });
+    }
+
+    if (room.host !== username) {
+      return res.status(403).json({ error: "Only the host can start the battle" });
+    }
+
+    if (room.players.length < 2) {
+      return res.status(400).json({ error: "Waiting for opponent to join" });
+    }
+
+    room.status = "started";
+    room.startedAt = new Date();
+    await room.save();
+
+    const io = req.app.get("io");
+    io.to(roomId).emit("battleStarted", room);
+    io.to(roomId).emit("battleUpdated", room);
+    io.emit("roomsUpdated");
+
+    res.json(room);
+  } catch (err) {
+    console.error("START BATTLE ERROR:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/*
+=================================
+REMATCH BATTLE
+=================================
+*/
+router.post("/rematch", async (req, res) => {
+  try {
+    const { roomId } = req.body;
+    const room = await MultiplayerRoom.findById(roomId);
+
+    if (!room) {
+      return res.status(404).json({ error: "Room not found" });
+    }
+
+    room.winner = "";
+    room.status = "waiting";
+    room.startedAt = null;
+    room.battleTime = 300;
+    await room.save();
+
+    const io = req.app.get("io");
+    io.to(roomId).emit("battleUpdated", room);
+    io.emit("roomsUpdated");
+
+    res.json(room);
+  } catch (err) {
+    console.error("REMATCH ERROR:", err);
     res.status(500).json({ error: err.message });
   }
 });

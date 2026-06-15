@@ -143,6 +143,19 @@ const BattleRoom = () => {
     };
   }, [id, loadRoom]);
 
+  const declareDraw = useCallback(async () => {
+    if (!room?._id || room.status !== "started" || room.winner) return;
+    try {
+      await fetch(`${API_URL}/api/multiplayer/winner`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ roomId: room._id, winner: "Draw" })
+      });
+    } catch (err) {
+      console.error("declareDraw error:", err);
+    }
+  }, [room?._id, room?.status, room?.winner]);
+
   /*
   =========================
   TIMER — synced from server startedAt timestamp
@@ -161,11 +174,12 @@ const BattleRoom = () => {
 
       if (remaining <= 0) {
         clearInterval(interval);
+        declareDraw();
       }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [room?.startedAt, room?.battleTime, room?.status]);
+  }, [room?.startedAt, room?.battleTime, room?.status, declareDraw]);
 
   /*
   =========================
@@ -183,6 +197,37 @@ const BattleRoom = () => {
       });
     } catch (err) {
       console.error("handleAccepted error:", err);
+    }
+  };
+
+  const startBattle = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/multiplayer/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ roomId: id, username })
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        alert(data.error || "Failed to start battle");
+      }
+    } catch (err) {
+      console.error("startBattle error:", err);
+    }
+  };
+
+  const handleRematch = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/multiplayer/rematch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ roomId: id })
+      });
+      if (!res.ok) {
+        alert("Failed to request rematch");
+      }
+    } catch (err) {
+      console.error("handleRematch error:", err);
     }
   };
 
@@ -244,17 +289,40 @@ const BattleRoom = () => {
       {/* PLAYERS */}
       <div className="text-center mb-6">
         {isWaiting ? (
-          <div className="bg-yellow-900/40 border border-yellow-600 rounded-xl p-4">
-            <div className="text-yellow-300 text-xl font-bold">
-              ⏳ Waiting for opponent...
+          room.players?.length === 1 ? (
+            <div className="bg-yellow-900/40 border border-yellow-600 rounded-xl p-4">
+              <div className="text-yellow-300 text-xl font-bold">
+                ⏳ Waiting for opponent...
+              </div>
+              <div className="text-zinc-400 text-sm mt-1">
+                Share this URL with a friend to start the battle
+              </div>
+              <div className="mt-2 text-xs text-zinc-500 font-mono break-all">
+                {window.location.href}
+              </div>
             </div>
-            <div className="text-zinc-400 text-sm mt-1">
-              Share this URL with a friend to start the battle
+          ) : (
+            <div className="bg-blue-900/40 border border-blue-600 rounded-xl p-5 max-w-md mx-auto">
+              <div className="text-blue-300 text-xl font-bold mb-2">
+                👥 Opponent Joined!
+              </div>
+              <div className="text-sm text-zinc-300 mb-4">
+                <strong>{room.players[0]}</strong> vs <strong>{room.players[1]}</strong>
+              </div>
+              {username === room.host ? (
+                <button
+                  onClick={startBattle}
+                  className="w-full py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white rounded-lg font-bold shadow-lg shadow-green-500/20 transition-all hover:scale-[1.02]"
+                >
+                  🚀 Start Battle
+                </button>
+              ) : (
+                <div className="text-zinc-400 text-sm animate-pulse">
+                  Waiting for host ({room.host}) to start the match...
+                </div>
+              )}
             </div>
-            <div className="mt-2 text-xs text-zinc-500 font-mono break-all">
-              {window.location.href}
-            </div>
-          </div>
+          )
         ) : (
           <div className="text-2xl font-bold">
             <span className="text-green-400">{room.players?.[0]}</span>
@@ -355,31 +423,71 @@ const BattleRoom = () => {
 
       {/* BATTLE FINISHED MODAL */}
       {room.winner && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-in fade-in duration-300">
           <div className="bg-[#282828] border border-yellow-500/30 rounded-2xl p-8 max-w-md w-full text-center shadow-2xl relative overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             {/* Decorative blurs */}
-            <div className="absolute -top-10 -left-10 w-32 h-32 bg-yellow-500/10 rounded-full blur-2xl" />
+            {room.winner === "Draw" ? (
+              <div className="absolute -top-10 -left-10 w-32 h-32 bg-blue-500/10 rounded-full blur-2xl" />
+            ) : room.winner === username ? (
+              <div className="absolute -top-10 -left-10 w-32 h-32 bg-green-500/10 rounded-full blur-2xl" />
+            ) : (
+              <div className="absolute -top-10 -left-10 w-32 h-32 bg-red-500/10 rounded-full blur-2xl" />
+            )}
             <div className="absolute -bottom-10 -right-10 w-32 h-32 bg-blue-500/10 rounded-full blur-2xl" />
             
-            <div className="text-6xl mb-4">🏆</div>
-            <h2 className="text-3xl font-extrabold tracking-tight mb-2 bg-gradient-to-r from-yellow-400 via-amber-400 to-yellow-500 bg-clip-text text-transparent">
-              Battle Finished!
-            </h2>
+            {room.winner === "Draw" ? (
+              <>
+                <div className="text-6xl mb-4">🤝</div>
+                <h2 className="text-3xl font-extrabold tracking-tight mb-2 bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent">
+                  Match Draw!
+                </h2>
+                <p className="text-zinc-400 text-sm mt-2">
+                  Time ran out with no correct submission.
+                </p>
+              </>
+            ) : room.winner === username ? (
+              <>
+                <div className="text-6xl mb-4">🎉</div>
+                <h2 className="text-3xl font-extrabold tracking-tight mb-2 bg-gradient-to-r from-green-400 to-emerald-400 bg-clip-text text-transparent">
+                  Victory!
+                </h2>
+                <p className="text-zinc-400 text-sm mt-2">
+                  Congratulations! You won the battle!
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="text-6xl mb-4">😢</div>
+                <h2 className="text-3xl font-extrabold tracking-tight mb-2 bg-gradient-to-r from-red-400 to-rose-400 bg-clip-text text-transparent">
+                  Better Luck Next Time
+                </h2>
+                <p className="text-zinc-400 text-sm mt-2">
+                  <strong>{room.winner}</strong> won the battle.
+                </p>
+              </>
+            )}
+
             <div className="my-6 p-4 rounded-xl bg-[#1d1d1d] border border-zinc-800">
-              <p className="text-zinc-400 text-xs uppercase tracking-wider mb-1">Winner</p>
-              <p className="text-2xl font-bold text-green-400">{room.winner}</p>
-              
-              <p className="text-zinc-400 text-xs uppercase tracking-wider mt-4 mb-1">Time Taken</p>
+              <p className="text-zinc-400 text-xs uppercase tracking-wider mb-1">Time Taken</p>
               <p className="text-xl font-semibold text-white">
                 {room.battleTime ? formatTime(room.battleTime) : "N/A"}
               </p>
             </div>
-            <button
-              onClick={() => navigate("/multiplayer")}
-              className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl font-bold shadow-lg transition-all"
-            >
-              Back to Arena
-            </button>
+
+            <div className="grid grid-cols-2 gap-4">
+              <button
+                onClick={handleRematch}
+                className="py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl font-bold shadow-lg transition-all"
+              >
+                Rematch
+              </button>
+              <button
+                onClick={() => navigate("/")}
+                className="py-3 bg-zinc-800 hover:bg-zinc-700 border border-zinc-750 text-white rounded-xl font-bold transition-all"
+              >
+                Go to Home
+              </button>
+            </div>
           </div>
         </div>
       )}

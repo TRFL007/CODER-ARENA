@@ -209,7 +209,7 @@ const SharedCodeEditor = ({
 
         <button
           onClick={handleCompileClick}
-          disabled={isBusy}
+          disabled={isBusy || disabled}
           className="bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-700 disabled:cursor-not-allowed px-5 py-2 rounded text-sm font-medium"
         >
           {compiling ? "Compiling..." : "Compile"}
@@ -217,7 +217,7 @@ const SharedCodeEditor = ({
 
         <button
           onClick={handleSubmitClick}
-          disabled={isBusy}
+          disabled={isBusy || disabled}
           className="bg-green-600 hover:bg-green-700 disabled:bg-zinc-700 disabled:cursor-not-allowed px-5 py-2 rounded text-sm font-medium"
         >
           {submitting ? "Submitting..." : "Submit"}

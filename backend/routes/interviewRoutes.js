@@ -1,9 +1,13 @@
 import express from "express";
 import jwt from "jsonwebtoken";
+import axios from "axios";
 
 const router = express.Router();
 
-const getInterviewAnswer = (question) => {
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
+const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
+
+const ruleBasedAnswer = (question) => {
   const normalized = question.toLowerCase();
 
   if (normalized.includes("array") || normalized.includes("arrays")) {
@@ -21,6 +25,49 @@ const getInterviewAnswer = (question) => {
   if (normalized.includes("binary search")) {
     return "Binary search is ideal whenever the problem involves a sorted array or monotonic condition. Outline the search boundaries, mid-point calculation, and how to adjust left/right pointers to avoid infinite loops.";
   }
+
+  return null;
+};
+
+const getInterviewAnswer = async (question) => {
+  // Prefer Groq AI if key is configured
+  if (GROQ_API_KEY) {
+    try {
+      const systemPrompt = `You are an interview coach. Answer the user's question about coding, algorithms, system design, or interview strategy. Provide a clear, step-by-step explanation, include complexity analysis when relevant, and give concise example code snippets where helpful. Keep answers focused and actionable.`;
+
+      const response = await axios.post(
+        GROQ_API_URL,
+        {
+          model: "mixtral-8x7b-32768",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: question }
+          ],
+          temperature: 0.2,
+          max_tokens: 800
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${GROQ_API_KEY}`,
+            "Content-Type": "application/json"
+          },
+          timeout: 15000
+        }
+      );
+
+      const content = response.data?.choices?.[0]?.message?.content;
+      if (content && typeof content === "string") {
+        return content.trim();
+      }
+    } catch (err) {
+      console.error("Groq interview error:", err.message || err);
+      // Fall through to rule-based fallback
+    }
+  }
+
+  // Rule-based fallback
+  const rule = ruleBasedAnswer(question);
+  if (rule) return rule;
 
   return "This AI assistant is active. In a real interview, I would help you reason through the problem step-by-step. Ask a question about coding problems, algorithms, system design, or interview preparation.";
 };
@@ -42,7 +89,7 @@ router.post("/ask", async (req, res) => {
       }
     }
 
-    const answer = getInterviewAnswer(question);
+    const answer = await getInterviewAnswer(question);
     res.json({ answer });
   } catch (err) {
     console.error("Interview ask error:", err);
