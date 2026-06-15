@@ -18,6 +18,17 @@ export default function Layout({ children }) {
     localStorage.setItem("theme", theme);
   }, [theme]);
 
+  useEffect(() => {
+    try {
+      const user = JSON.parse(localStorage.getItem("user") || "{}");
+      if (user && user.name && localStorage.getItem("username") !== user.name) {
+        localStorage.setItem("username", user.name);
+      }
+    } catch (e) {
+      console.error("Failed to sync username:", e);
+    }
+  }, []);
+
   const hideShell = hiddenRoutes.includes(location.pathname);
 
   return (

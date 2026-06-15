@@ -20,6 +20,9 @@ export default function Login() {
       if (!res.ok) throw new Error(data.error || "Login failed");
       localStorage.setItem("token", data.token);
       localStorage.setItem("user", JSON.stringify(data.user));
+      if (data.user && data.user.name) {
+        localStorage.setItem("username", data.user.name);
+      }
       navigate("/");
     } catch (err) {
       setError(err.message);
